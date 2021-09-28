@@ -1,0 +1,1597 @@
+#Application Scoring
+
+#print current directory and change it
+import os
+print("Current working directory: {0}".format(os.getcwd()))
+os.chdir("C:\\Users\\sinem.atılgan\\Desktop\\Business Analytics\\Group Project")
+#Import Dataset
+import pandas as pd
+creditcard_df = pd.read_excel("Bank_Credit_Cards.xlsx", sheet_name="data")
+#Subset dataset based on application scoring
+application_df=creditcard_df[["NO-OF-CARDS","BIRTH-DATE","SEX","OCCUPATION-CODE","BLACK-LIST-CODE","ALL-MAX-BUCKET","OUT-BANK-ACCOUNT","BRANCH-CODE"]]
+
+#Data Pre-Processing
+#Drop NO-OF-CARDS
+application_df=application_df.drop(["NO-OF-CARDS"], axis=1)
+#Change M&F and replace 0&1
+application_df["SEX"].replace(to_replace=["M","F"], value=[0,1],inplace=True)
+#Change the occupation code and out bank account values; if it is provided 1 then 0
+application_df["OCCUPATION-CODE"][application_df["OCCUPATION-CODE"] > 0] = 1
+application_df["OUT-BANK-ACCOUNT"][application_df["OUT-BANK-ACCOUNT"] > 0] = 1
+#Change the blacklist code; if client is in blacklist 1 then 0
+application_df["BLACK-LIST-CODE"][application_df["BLACK-LIST-CODE"] > 0] = 1
+#Change data type of branch code to categorical
+application_df["BRANCH-CODE"] = application_df["BRANCH-CODE"].astype("category")
+#Calculate age by using birthday, and drop birthdate.Experiment year is assumed as 2000.
+exp_year=2000
+application_df["AGE"] = exp_year-(application_df["BIRTH-DATE"].astype(str).str[:4].astype(int))
+application_df=application_df.drop(["BIRTH-DATE"], axis=1)
+#Change mistaken age with average-no less than 18; no greater than 100
+average_age = application_df['AGE'].mean()
+application_df['AGE'] = application_df['AGE'].mask(application_df['AGE'] > 90, int(average_age))
+application_df['AGE'] = application_df['AGE'].mask(application_df['AGE'] < 18, int(average_age))
+#Drop NA values if any
+application_df = application_df.dropna()
+application_df = application_df.reset_index(drop=True)
+# binary encode
+application_df=pd.get_dummies(application_df,prefix=['BRANCH-CODE'], columns = ['BRANCH-CODE'], drop_first=True)
+#Changing Buckets to negative
+#Dataset with profit and loss
+application_df["ALL-MAX-BUCKET"].replace(to_replace=[0,1,2,3,4,5,6,7], value=[0,-1,-2,-3,-4,-5,-6,-7],inplace=True)
+
+application_binary_df=application_df.copy()
+application_bucket_df=application_df.copy()
+application_profit_df=application_df.copy()
+
+## importing file and creating dataframe ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+os.chdir("/Users/akash/Desktop/Group Project QM/BrainBravo - P1")
+original_df = pd.read_excel('Bank_Credit_Cards.xlsx', sheet_name = 'data')
+original_df.describe(include = "all")
+original_df.dtypes
+
+behavior_df = original_df[['MEMBER-SINCE', 'BIRTH-DATE', 'SEX', 
+                                'ATTRITION-REASON', 'BLACK-LIST-DATE', 
+                                'WRITE-OFF-DATE', 'SPENDING-LIMIT', 
+                                'AVG-PAYMENTS', 'AVG-BALANCES', 'AT-ANNIV-DATE',
+                                'LAST-TRX-DATE', 'OY-AMT-CASH', 'PY-AMT-CASH', 
+                                'YTD-AMT-CASH', 'YTD-MAX-BUCKET', 'PY-MAX-BUCKET', 
+                                'ALL-MAX-BUCKET','ACCOUNT-STATUS', 'CURRENT-BALANCE']]
+# originalBehaviorDescription = behavior_df.dtypes
+
+# assuming the data recoded year
+exp_year = 2002
+
+# experiment date in datetime format  
+exp_year_dt = datetime.strptime('2002', '%Y')
+
+
+## data cleaning ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+# removing corrupted and null values
+behavior_df.isnull().sum()
+
+behavior_df['BIRTH-DATE'] = behavior_df['BIRTH-DATE'].astype(str)
+count = 0
+for temp in behavior_df['BIRTH-DATE']:
+    if temp == '0':
+        behavior_df['BIRTH-DATE'][count] =  exp_year_dt
+    else:
+        behavior_df['BIRTH-DATE'][count] =  datetime.strptime(temp, '%Y%M%d')
+    count+=1
+
+# avg-payments consist of "-" observations
+behavior_df['AVG-PAYMENTS'] = behavior_df['AVG-PAYMENTS'].astype(str) # corrupted values
+count = 0
+for temp in behavior_df['AVG-PAYMENTS']: 
+    if temp.find("-") != -1:
+        behavior_df['AVG-PAYMENTS'][count] = temp[:-1]
+    count += 1
+behavior_df['AVG-PAYMENTS'] = behavior_df['AVG-PAYMENTS'].astype(int)    
+
+# avg-balances consist of "-" observations
+behavior_df['AVG-BALANCES'] = behavior_df['AVG-BALANCES'].astype(str) 
+
+# converting member-since to customer-loyalty rating
+behavior_df['CUST-LOYALTY'] = 0
+count = 0
+while count <len(behavior_df):
+        behavior_df['CUST-LOYALTY'][count] = ((exp_year_dt - behavior_df['MEMBER-SINCE'][count]).days)/365
+        count += 1
+behavior_df = behavior_df.drop(['MEMBER-SINCE'], axis =1)
+
+# create age from birth-date
+behavior_df['AGE'] = 0
+count = 0
+while count <len(behavior_df):
+        behavior_df['AGE'][count] = ((exp_year_dt - behavior_df['BIRTH-DATE'][count]).days)/365
+        count += 1
+behavior_df = behavior_df.drop(['BIRTH-DATE'], axis =1)
+
+# convert male and female to 0 and 1
+behavior_df['SEX'].replace(to_replace = ['M', 'F'], value = [0, 1], inplace = True)
+
+# convert attrition codes to attrition yes or no (1 or 0) 
+behavior_df['ATTRITION-REASON'][behavior_df['ATTRITION-REASON'] > 0] = 1
+behavior_df['ATTRITION'] = behavior_df['ATTRITION-REASON']
+behavior_df = behavior_df.drop(['ATTRITION-REASON'], axis=1)
+
+# convert black-list date to black-listed yes or no (1 or 0) 
+behavior_df['BLACK-LIST-DATE'][behavior_df['BLACK-LIST-DATE'] > 0] = 1
+behavior_df['BLACK-LISTED'] = behavior_df['BLACK-LIST-DATE']
+behavior_df = behavior_df.drop(['BLACK-LIST-DATE'], axis=1)
+
+# convert write-off date to written-off yes or no (1 or 0) 
+behavior_df['WRITE-OFF-DATE'][behavior_df['WRITE-OFF-DATE'] != 0] = 1
+behavior_df['WRITTEN-OFF'] = behavior_df['WRITE-OFF-DATE']
+behavior_df = behavior_df.drop(['WRITE-OFF-DATE'], axis=1)
+
+# no manipulation on spending-limit
+# no manipulation on avg-payments
+# no manipulation on avg-balances
+# no manipulation on at-anniv-date
+
+# create idle-period from last-trx-date
+behavior_df['IDLE-PERIOD'] = 0
+count = 0
+while count <len(behavior_df):
+        behavior_df['IDLE-PERIOD'][count] = (exp_year_dt - behavior_df['LAST-TRX-DATE'][count]).days
+        count += 1
+behavior_df = behavior_df.drop(['LAST-TRX-DATE'], axis =1)
+
+# no manipulation on oy-amt-cash
+# no manipulation on py-amt-cash
+# no manipulation on ytd-amt-cash
+
+# replacing ytd-max-bucket for clear understanding
+behavior_df['YTD-MAX-BUCKET'].replace(to_replace=[0,1,2,3,4,5,6,7], value=[0,-1,-2,-3,-4,-5,-6,-7],inplace=True)
+
+# replacing py-max-bucket for clear understanding
+behavior_df['PY-MAX-BUCKET'].replace(to_replace=[0,1,2,3,4,5,6,7], value=[0,-1,-2,-3,-4,-5,-6,-7],inplace=True)
+
+# replacing all-max-bucket for clear understanding
+behavior_df['ALL-MAX-BUCKET'].replace(to_replace=[0,1,2,3,4,5,6,7], value=[0,-1,-2,-3,-4,-5,-6,-7],inplace=True)
+
+# creating ACCOUNT-status dummy variable
+behavior_df['ACCOUNT-STATUS'] = pd.Categorical(behavior_df['ACCOUNT-STATUS'])
+AccStat_Dummy = pd.get_dummies(behavior_df['ACCOUNT-STATUS'], drop_first=True)
+behavior_df = behavior_df.drop(['ACCOUNT-STATUS'], axis =1)
+
+# no manipulation on current-balance
+
+behavior_df.dtypes
+behaviorDescription = behavior_df.describe()
+
+## feature selection ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+# dropping at-anniv-date variable
+behavior_df = behavior_df.drop(['AT-ANNIV-DATE'], axis =1)
+
+# preparing data-frame for feature selection
+targetVar = behavior_df['ALL-MAX-BUCKET']
+featureVars = behavior_df.drop(['ALL-MAX-BUCKET'], axis =1)
+featureSel_df = pd.concat([featureVars, targetVar], axis =1)
+featureSel_df.isnull().sum()
+
+# apply feature selection for k best features
+fs = SelectKBest(score_func = f_classif, k = 'all')
+fs.fit(featureVars, targetVar)
+#  fs.get_support().sum()
+# print(f"pValues: {np.round(fs.pvalues_, 4)}")
+# print(f"fValues: {fs.scores_}")
+
+fScores = pd.DataFrame(fs.scores_)
+pValues = pd.DataFrame(np.round(fs.pvalues_, 4))
+fColumns = pd.DataFrame(featureVars.columns)
+fsDescription = pd.concat([fColumns, fScores, pValues], axis =1)
+fsDescription.columns = ["Features", "F-Score", "P-Value"]
+featureSel_df = featureSel_df.drop(["YTD-MAX-BUCKET", "PY-MAX-BUCKET", "AGE"], axis =1)
+
+## merging dummy and variables ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+merged_df = pd.concat([featureSel_df, AccStat_Dummy], axis=1)
+merged_df.isnull().sum()
+
+merged_df.dropna(inplace = True)
+merged_df.dtypes
+mergedDescription = merged_df.describe()
+
+
+## normalizing and splitting data for 3 approaches ~~~~~~~~~~~~~~~~~~~~~~~~~~~
+######### run after the feature selection is completed
+toScale = [col for col in featureSel_df.columns if featureSel_df[col].max() > 1]
+scaler = MinMaxScaler()
+scaledData = scaler.fit_transform(merged_df[toScale])
+scaledData = pd.DataFrame(scaledData, columns=toScale)
+for col in scaledData:
+    merged_df[col] = scaledData[col]
+    
+behave_classification = merged_df.copy()
+behave_classification["ALL-MAX-BUCKET"][behave_classification["ALL-MAX-BUCKET"] >= -2] = 1
+behave_classification["ALL-MAX-BUCKET"][behave_classification["ALL-MAX-BUCKET"] < -2] = 0
+
+behave_bucket = merged_df.copy()
+
+behave_profitLoss = merged_df.copy()
+
+merged_df = merged_df.dropna(how = 'any')
+merged_df.isnull().sum()    
+## creating seperate analysis  dataframes ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+behave_classification = merged_df.copy()
+behave_classification["ALL-MAX-BUCKET"][behave_classification["ALL-MAX-BUCKET"] >= -2] = 1
+behave_classification["ALL-MAX-BUCKET"][behave_classification["ALL-MAX-BUCKET"] < -2] = 0
+
+behave_bucket = merged_df.copy()
+
+behave_profitLoss = merged_df.copy()
+
+#DEFINE FUNCTION-PART I Grid Search
+
+#Grid search for Logistic Regression
+def GridLogistic(xtrain,ytrain):
+    from sklearn.model_selection import GridSearchCV
+    from sklearn.linear_model import LogisticRegression
+    LR=LogisticRegression(random_state=3)
+    #Define parameters
+    parameter_grid = {'C': [0.01,0.1,1, 10, 100],
+                      "penalty":["l1", "l2", "elasticnet", "none"],
+                      "class_weight":["balanced",{0: 1, 1: 1}, {0: 22.5, 1: 1}, {0:5 , 1: 1}],
+                      'solver' : ["newton-cg", "lbfgs", "liblinear", "sag", "saga"],
+                      'multi_class' :["auto", "ovr", "multinomial"]}
+    CV_LR= GridSearchCV(estimator=LR, param_grid=parameter_grid, cv= 3, scoring="balanced_accuracy")
+    #Find best parameters for given dataset
+    Parameters=CV_LR.fit(xtrain, ytrain)
+    print (Parameters.best_params_)
+;
+#Grid search for Support Vector Machine Classifier
+def GridSVM(xtrain,ytrain):
+    from sklearn.model_selection import GridSearchCV
+    from sklearn import svm
+    SVM=svm.SVC(random_state=3)
+    #Define parameters
+    parameter_grid = {'C': [0.1,1, 10, 100],
+                      'kernel' : ["linear", "poly", "rbf", "sigmoid"],
+                      'gamma' :[[1,0.1,0.01,0.001], "auto"],
+                      'degree' :[1,3,5,7,9]}
+    CV_SVM = GridSearchCV(estimator=SVM, param_grid=parameter_grid, cv= 3,scoring="balanced_accuracy")
+    #Find best parameters for given dataset
+    Parameters=CV_SVM.fit(xtrain, ytrain)
+    print (Parameters.best_params_)
+;
+#Grid search for KNeighbors Classifier
+def GridKNN(xtrain,ytrain):
+    from sklearn.model_selection import GridSearchCV
+    from sklearn.neighbors import KNeighborsClassifier
+    KNN=KNeighborsClassifier()
+    #Define parameters
+    parameter_grid = {'n_neighbors' : [5,7,9,11,13,15,17,19],
+                      'weights' :['uniform', 'distance'],
+                      'p' :[1,2],
+                      'algorithm' :["auto", "ball_tree", "kd_tree", "brute"]}
+    CV_KNN = GridSearchCV(estimator=KNN, param_grid=parameter_grid, cv= 3,scoring="balanced_accuracy")
+    #Find best parameters for given dataset
+    Parameters=CV_KNN.fit(xtrain, ytrain)
+    print (Parameters.best_params_)
+;
+#Grid search for Decision Tree Classifier
+def GridDecisionTree(xtrain,ytrain):
+    from sklearn.model_selection import GridSearchCV
+    from sklearn.tree import DecisionTreeClassifier
+    decisiontree=DecisionTreeClassifier(random_state=3)
+    #Define parameters
+    parameter_grid = {'max_depth' : [3,5,7,9,11,13,15],
+                       'criterion' :['gini', 'entropy'],
+                       "class_weight":["balanced",[{0: 1, 1: 1}, {0: 22.5, 1: 1}, {0:5 , 1: 1}]]}
+    CV_decisiontree = GridSearchCV(estimator=decisiontree, param_grid=parameter_grid, cv= 3,scoring="balanced_accuracy")
+    #Find best parameters for given dataset
+    Parameters=CV_decisiontree.fit(xtrain, ytrain)
+    print (Parameters.best_params_)
+;
+#Grid search for Random Forest Classifier
+def GridRandomForest(xtrain,ytrain):
+    from sklearn.model_selection import GridSearchCV
+    from sklearn.ensemble import RandomForestClassifier
+    random_forest=RandomForestClassifier(random_state=3)
+    #Define parameters
+    parameter_grid = {'n_estimators': [100,200,300,500],
+                       'max_features': ['auto', 'sqrt', 'log2'],
+                       'max_depth' : [4,5,6,7,9,11,13,15],
+                       'criterion' :['gini', 'entropy'],
+                       "class_weight":["balanced", "balanced_subsample",[{0: 1, 1: 1}, {0: 22.5, 1: 1}, {0:5 , 1: 1}]]}
+    CV_random_forest = GridSearchCV(estimator=random_forest, param_grid=parameter_grid, cv= 3,scoring="balanced_accuracy")
+    #Find best parameters for given dataset
+    Parameters=CV_random_forest.fit(xtrain, ytrain)
+    print (Parameters.best_params_)
+;
+#Grid search for Neural Network
+def GridNN(xtrain,ytrain):
+    from sklearn.model_selection import GridSearchCV
+    from sklearn.neural_network import MLPClassifier
+    NN = MLPClassifier()
+    param_list = {'solver': ['lbfgs'],
+                  'max_iter': [500,1000,1500],
+                  'alpha': 10.0 ** -np.arange(1, 7),
+                  'hidden_layer_sizes':np.arange(5, 12),
+                  'random_state':[0,1,2,3,4,5,6,7,8,9]}
+    CV_NN = GridSearchCV(estimator = NN, param_grid = param_list, cv = 3, n_jobs = -1)
+    Parameters = CV_NN.fit(xtrain, ytrain)
+    print(Parameters.best_params_)
+;    
+#Grid search for Linear Regression
+def GridLinear(xtrain,ytrain):
+    from sklearn.model_selection import GridSearchCV
+    from sklearn import linear_model
+    LiR=linear_model.LinearRegression()
+    #Define parameters
+    parameter_grid = {"fit_intercept":[True,False]}
+    CV_LiR= GridSearchCV(estimator=LiR, param_grid=parameter_grid, cv= 3, scoring="neg_mean_absolute_error")
+    #Find best parameters for given dataset
+    Parameters=CV_LiR.fit(xtrain, ytrain)
+    print (Parameters.best_params_)
+;
+#Grid search for Support Vector Machine Regressor
+def GridSVMR(xtrain,ytrain):
+    from sklearn.model_selection import GridSearchCV
+    from sklearn import svm
+    SVM=svm.SVR()
+    #Define parameters
+    parameter_grid = {'C': [0.1,1, 10, 100],
+                      'kernel' : ["linear", "poly", "rbf", "sigmoid"],
+                      'gamma' :[[1,0.1,0.01,0.001], "auto","scale"],
+                      'degree' :[1,3,5,7,9]}
+    CV_SVM = GridSearchCV(estimator=SVM, param_grid=parameter_grid, cv= 3,scoring="neg_mean_absolute_error")
+    #Find best parameters for given dataset
+    Parameters=CV_SVM.fit(xtrain, ytrain)
+    print (Parameters.best_params_)
+;
+#Grid search for KNeighbors Regressor
+def GridKNNR(xtrain,ytrain):
+    from sklearn.model_selection import GridSearchCV
+    from sklearn.neighbors import KNeighborsRegressor
+    KNN=KNeighborsRegressor()
+    #Define parameters
+    parameter_grid = {'n_neighbors' : [5,7,9,11,13,15,17,19],
+                      'weights' :['uniform', 'distance'],
+                      'p' :[1,2],
+                      'algorithm' :["auto", "ball_tree", "kd_tree", "brute"]}
+    CV_KNN = GridSearchCV(estimator=KNN, param_grid=parameter_grid, cv= 3,scoring="neg_mean_absolute_error")
+    #Find best parameters for given dataset
+    Parameters=CV_KNN.fit(xtrain, ytrain)
+    print (Parameters.best_params_)
+;
+#Grid search for Decision Tree Regressor
+def GridDecisionTreeR(xtrain,ytrain):
+    from sklearn.model_selection import GridSearchCV
+    from sklearn.tree import DecisionTreeRegressor
+    decisiontree=DecisionTreeRegressor(random_state=3)
+    #Define parameters
+    parameter_grid = {'max_depth' : [3,5,7,9,11,13,15],
+                       'criterion' :["mse", "friedman_mse", "mae", "poisson"],
+                       "max_features": [int, float, "auto", "sqrt", "log2"]}
+    CV_decisiontree = GridSearchCV(estimator=decisiontree, param_grid=parameter_grid, cv= 3,scoring="neg_mean_absolute_error")
+    #Find best parameters for given dataset
+    Parameters=CV_decisiontree.fit(xtrain, ytrain)
+    print (Parameters.best_params_)
+;
+#Grid search for Random Forest Regressor
+def GridRandomForestR(xtrain,ytrain):
+    from sklearn.model_selection import GridSearchCV
+    from sklearn.ensemble import RandomForestRegressor
+    random_forest=RandomForestRegressor(random_state=3)
+    #Define parameters
+    parameter_grid = {'n_estimators': [100,200,300,500],
+                       'max_features': ['auto', 'sqrt', 'log2',int,float],
+                       'max_depth' : [4,5,6,7,9,11,13,15]}
+    CV_random_forest = GridSearchCV(estimator=random_forest, param_grid=parameter_grid, cv= 3,scoring="neg_mean_absolute_error")
+    #Find best parameters for given dataset
+    Parameters=CV_random_forest.fit(xtrain, ytrain)
+    print (Parameters.best_params_)
+;  
+#Grid search for Neural Network Regressor
+def GridNNR(xtrain,ytrain):
+    from sklearn.model_selection import GridSearchCV
+    from sklearn.neural_network import MLPRegressor
+    NN = MLPRegressor()
+    param_list = {"hidden_layer_sizes": [(1,),(50,),(50,50,50), (50,100,50), (100,)],
+                  "activation": ["identity", "logistic", "tanh", "relu"],
+                  "solver": ["lbfgs", "sgd", "adam"],
+                  "alpha": [0.00005,0.0005]}
+    CV_NN = GridSearchCV(estimator = NN, param_grid =  param_list, cv = 3, n_jobs=-1)
+    Parameters = CV_NN.fit(xtrain, ytrain)
+    print(Parameters.best_params_)
+;
+
+
+#DEFINE FUNCTION-PART II ML Algorithms
+
+#Apply logistic regression
+def LogisticReg(c,p,w,s,mc,xtrain, xtest, ytrain):
+    from sklearn.linear_model import LogisticRegression
+    from sklearn.metrics import confusion_matrix
+    Model_LR = LogisticRegression(C=c,penalty=p,class_weight=w, solver=s,multi_class=mc).fit(xtrain,ytrain)
+    #Make prediction
+    Yhat_LRProb=Model_LR.predict_proba(xtest)
+    return Yhat_LRProb           
+;
+#Apply Support Vector Machine Classifier
+def SVM(c,k,g,d,xtrain, xtest, ytrain):
+    #Modeling Support Vector Machine: linear, polynomial,rbs(radial basis function),sigmoid
+    from sklearn import svm
+    Model_SVM = svm.SVC(C=c,kernel=k,gamma=g,degree=d,probability=True)
+    Model_SVM.fit(xtrain, ytrain) 
+    #make prediction
+    Yhat_SVMProb=Model_SVM.predict_proba(xtest)
+    return Yhat_SVMProb
+;
+#Apply KNN Classifier
+def KNN(k,w,p,a,xtrain, xtest, ytrain):
+    #Classification-KNN
+    from sklearn.neighbors import KNeighborsClassifier
+    #Train
+    Model_KNN = KNeighborsClassifier(n_neighbors=k,weights=w,p=p,algorithm=a).fit(xtrain,ytrain)
+    Yhat_KNNProb=Model_KNN.predict_proba(xtest)
+    return Yhat_KNNProb        
+;
+#Apply Decision Tree Classifier
+def DecisionTree(n,c,w,xtrain, xtest, ytrain):
+    from sklearn.tree import DecisionTreeClassifier
+    #modelling
+    Model_DTree1 = DecisionTreeClassifier(criterion=c, max_depth = n,class_weight=w).fit(xtrain,ytrain)
+    #prediction
+    Yhat_DTreeProb=Model_DTree1.predict_proba(xtest)
+    return Yhat_DTreeProb
+;
+#Apply Random Forest Classifier
+def RandomForest(n,f,d,c,w,xtrain, xtest, ytrain):
+    #Import Random Forest Model
+    from sklearn.ensemble import RandomForestClassifier
+    #Create a Gaussian Classifier
+    clf=RandomForestClassifier(n_estimators=n,max_features=f,max_depth=d,criterion=c,class_weight=w)
+    #Train the model using the training sets y_pred=clf.predict(X_test)
+    clf.fit(xtrain,ytrain)
+    #Make prediction
+    Yhat_RandomForestProb=clf.predict_proba(xtest)
+    return Yhat_RandomForestProb
+;
+#Apply MLPClassifier
+def NN(a,h,i,r,s,xtrain, xtest, ytrain):
+    #Classification-NN
+    from sklearn.neural_network import MLPClassifier
+    #Train
+    Model_KNN = MLPClassifier(alpha = 0.001, hidden_layer_sizes = 6, max_iter = 500, random_state = 0, solver = 'lbfgs').fit(xtrain,ytrain)
+    Yhat_KNNProb=Model_KNN.predict_proba(xtest)
+    return Yhat_KNNProb       
+;
+#Apply Linear Regression
+def LinearRegression(intercept,xtrain,ytrain,xtest):
+    from sklearn import linear_model
+    regr = linear_model.LinearRegression(fit_intercept=intercept)
+    #Train the model using the training sets 
+    regr.fit(xtrain,ytrain)
+    #Make prediction
+    Yhat_LinearRegression=regr.predict(xtest)
+    return Yhat_LinearRegression
+;
+#Apply SVM Regressor
+def SVMR(k,c,g,d,xtrain, xtest, ytrain):
+    #Modeling Support Vector Machine: linear, polynomial,rbs(radial basis function),sigmoid
+    from sklearn import svm
+    Model_SVMR = svm.SVR(kernel=k,C=c, gamma=g,degree=d)
+    Model_SVMR.fit(xtrain, ytrain) 
+    #make prediction
+    Yhat_SVMR = Model_SVMR.predict(xtest)
+    return Yhat_SVMR
+;
+#Apply KNN Regressor
+def KNNR(k,w,p,a,xtrain, xtest, ytrain):
+    #Classification-KNN
+    from sklearn.neighbors import KNeighborsRegressor
+    #Train
+    Model_KNNR = KNeighborsRegressor(n_neighbors=k,weights=w,p=p,algorithm=a).fit(xtrain,ytrain)
+    Yhat_KNNR = Model_KNNR.predict(xtest)
+    return Yhat_KNNR
+;
+#Apply Decision Tree Regressor
+def DecisionTreeR(n,c,f,xtrain, xtest, ytrain):
+    from sklearn.tree import DecisionTreeRegressor
+    #modelling
+    Model_DTreeR = DecisionTreeRegressor(max_depth = n,criterion=c,max_features=f)
+    Model_DTreeR.fit(xtrain,ytrain)
+    #prediction
+    Yhat_DTreeR=Model_DTreeR.predict(xtest)
+    return Yhat_DTreeR
+;
+#Apply Random Forest Regressor
+def RandomForestR(n,d,f,xtrain, xtest, ytrain):
+    #Import Random Forest Model
+    from sklearn.ensemble import RandomForestRegressor
+    #Create a Gaussian Classifier
+    clfR=RandomForestRegressor(n_estimators=n,max_depth=d,max_features=f)
+    #Train the model using the training sets y_pred=clf.predict(X_test)
+    clfR.fit(xtrain,ytrain)
+    #Make prediction
+    Yhat_RandomForestR=clfR.predict(xtest)
+    return Yhat_RandomForestR
+;
+def NNR(c,h,s,a,xtrain,xtest,ytrain):
+    from sklearn.neural_network import MLPRegressor
+    NN = MLPRegressor(activation = c,hidden_layer_sizes = h,solver = s, alpha = a)
+    NN.fit(xtrain,ytrain)
+    Yhat_NN = NN.predict(xtest)
+    return Yhat_NN
+;
+
+#DEFINE FUNCTION-PART III 
+
+#Feature Selection-Univariate ANOVA F Test
+def FeatureSelectionAnova(k, xarray,yarray):
+    # Feature Selection with Univariate Statistical Tests
+    from numpy import set_printoptions
+    from sklearn.feature_selection import SelectKBest
+    from sklearn.feature_selection import f_classif
+    # feature extraction
+    univariate_test1 = SelectKBest(score_func=f_classif, k=k)
+    univariate_fit1 = univariate_test1.fit(xarray, yarray)
+    # summarize scores
+    set_printoptions(precision=3)
+    print("Score of Variables %s" %univariate_fit1.scores_)
+    features1 = univariate_fit1.transform(xarray)
+;
+#Apply Principle Component Analysis
+def PCA(n, xarray):
+    # Feature Extraction with PCA
+    from pandas import read_csv
+    from sklearn.decomposition import PCA
+    # feature extraction
+    pca1 = PCA(n_components=n)
+    fit_PCA1 = pca1.fit(xarray)
+    # summarize components
+    print("Explained Variance: %s" % fit_PCA1.explained_variance_ratio_)
+;
+#Normalize dataset
+def Normalize(df):
+    import numpy as np
+    #Normalize dataset
+    Numeric_cols = df.select_dtypes(include=np.number).columns.tolist()
+    Categorical_cols = df.select_dtypes(['category']).columns.tolist()
+    from sklearn.preprocessing import MinMaxScaler
+    scaler = MinMaxScaler()
+    X_normalized=scaler.fit(df[Numeric_cols]).transform(df)
+    return X_normalized    
+;
+#Results for Binary Model
+def display_summary(true,pred):
+    import numpy as np
+    import math
+    from sklearn.metrics import confusion_matrix
+    from sklearn.metrics import balanced_accuracy_score
+    #Seperate components of confusion matrix
+    tn, fp, fn, tp = confusion_matrix(true,pred, labels=[0,1]).ravel()
+    #Print Confusion Matrix
+    print('Confusion Matrix:')
+    print(np.array([[tp,fp],[fn,tn]]))
+    #Calculate Sensitivity and Specifity
+    Sensitivity=tp/(tp+fn)
+    Specifity=tn/(tn+fp)
+    #Calculate G-Means
+    print("G-Means:",math.sqrt(Sensitivity*Specifity))
+    #Calculate Accuracy
+    from sklearn.metrics import accuracy_score
+    accuracy_score = accuracy_score(true, pred)
+    print("Accuracy Score: ", accuracy_score)
+    #Calculate Profit or Loss of the model
+    Profit_Loss=0.02*(tp/(tp+fp))-0.45*(fp/(tp+fp))
+    print("Profit or Loss:",Profit_Loss)
+    print("---------------------")
+;
+#Results for Binary Model
+def display_summarySMOTE(true,pred):
+    import numpy as np
+    import math
+    from sklearn.metrics import confusion_matrix
+    from sklearn.metrics import balanced_accuracy_score
+    #Seperate components of confusion matrix
+    tn, fp, fn, tp = confusion_matrix(true,pred, labels=[0,1]).ravel()
+    #Print Confusion Matrix
+    print('Confusion Matrix:')
+    print(np.array([[tp,fp],[fn,tn]]))
+    #Calculate Sensitivity and Specifity
+    Precision=tp/(tp+fp)
+    Recall=tp/(tp+fn)
+    #Calculate G-Means
+    print("F1 Score:",2*((Precision*Recall)/(Precision+Recall)))
+    #Calculate Accuracy
+    from sklearn.metrics import accuracy_score
+    accuracy_score = accuracy_score(true, pred)
+    print("Accuracy Score: ", accuracy_score)
+    #Calculate Profit or Loss of the model
+    Profit_Loss=0.02*(tp/(tp+fp))-0.45*(fp/(tp+fp))
+    print("Profit or Loss:",Profit_Loss)
+    print("---------------------")
+;
+
+BINARY MODELS
+#Change the branch code for profitable application(1) or loss(0)
+application_binary_df["ALL-MAX-BUCKET"][application_binary_df["ALL-MAX-BUCKET"] > -2] = 1
+application_binary_df["ALL-MAX-BUCKET"][application_binary_df["ALL-MAX-BUCKET"] < -1] = 0
+#Display Summary Statistics
+application_binary_df.describe()
+#Plot distribution of class
+import seaborn as sns
+import matplotlib.pyplot as plt
+g_bin = sns.countplot(application_binary_df['ALL-MAX-BUCKET'])
+g_bin.set_xticklabels(['Loss','Profit'])
+plt.show()
+#FEATURE SELECTION APPLICATION
+import numpy as np
+#Split dependent and independent variables
+X_df_binary=application_binary_df.drop(["ALL-MAX-BUCKET"], axis=1)
+Y_df_binary=application_binary_df[["ALL-MAX-BUCKET"]]
+X_array_binary = X_df_binary.values
+Y_array_binary = Y_df_binary.values
+#Apply FSA and PCA
+FeatureSelectionAnova(4, X_array_binary[:,0:5],Y_array_binary)
+PCA(2, X_array_binary)
+#Exclude least effective variables
+X_df_binary_fs=X_df_binary.loc[:, ~X_df_binary.columns.isin(['OCCUPATION-CODE', 'OUT-BANK-ACCOUNT'])]
+#Split data into train and test set
+X_Normalized_Binary_fs=Normalize(X_df_binary_fs)
+from sklearn.model_selection import train_test_split
+X_train1fs, X_test1fs, Y_train1fs, Y_test1fs = train_test_split( X_Normalized_Binary_fs, Y_array_binary, test_size=0.3, random_state=4)
+print ('Train set:', X_train1fs.shape,  Y_train1fs.shape)
+print ('Test set:', X_test1fs.shape,Y_test1fs.shape)
+#Apply Algorithms
+Binary_Logistic1F        =LogisticReg(0.01,"none","balanced","newton-cg","auto",X_train1fs, X_test1fs, Y_train1fs)
+Binary_SVM1F             =SVM(0.1,"linear","auto",1,X_train1fs, X_test1fs, Y_train1fs)
+Binary_KNN1F             =KNN(5,"distance",1,"ball_tree",X_train1fs, X_test1fs, Y_train1fs)
+Binary_DecisionTree1F    =DecisionTree(9,"entropy","balanced",X_train1fs, X_test1fs, Y_train1fs)
+Binary_RandomForest1F    =RandomForest(300,"log2",7,"gini","balanced",X_train1fs, X_test1fs, Y_train1fs)
+#Performance Metrics
+from sklearn.metrics import roc_curve
+from sklearn.metrics import roc_auc_score
+listofalgorithm=(Binary_Logistic1F,Binary_SVM1F,Binary_KNN1F,Binary_DecisionTree1F,Binary_RandomForest1F)
+AlgorithmNames=("Logistic","SVM","KNN","DecisionTree","RandomForest")
+for i in range(0,5):
+    algorithm=listofalgorithm[i]
+    name=AlgorithmNames[i]
+    #Probability of positive outcome
+    positiveprob= algorithm[:,1]
+    #ROC Curve
+    fpr, tpr, tresholds =roc_curve(Y_test1fs, positiveprob)
+    #Calculate Gmeans
+    def sqrt(x):
+        return x**(1/2)
+    gmeans = sqrt(tpr * (1 - fpr))
+    #Locate the index of the largest g-mean
+    largest = np.argmax(gmeans)
+    print('Best Threshold=%f, G-Mean=%.3f' % (tresholds[largest], gmeans[largest]),"for",name)
+    Probability_of_Positive = algorithm[:, 1]
+    New = []
+    #Create new dataset with the selected customers
+    for k in range(0, len(Probability_of_Positive)):
+        if Probability_of_Positive[k]>tresholds[largest]:
+            New.append(1)
+        else:
+            New.append(0)
+    #Calculate profit/loss and gmeans 
+    display_summary(Y_test1fs,New)   
+    # Plot the roc curve for the model
+    plt.plot([0,1], [0,1], linestyle='--', label='No Skill')
+    plt.plot(fpr, tpr, marker='.', label=name)
+    plt.scatter(fpr[largest], tpr[largest], marker='o', color='black', label='Best')
+    # axis labels
+    plt.xlabel('False Positive Rate')
+    plt.ylabel('True Positive Rate')
+    plt.legend()
+    # show the plot
+    plt.show()
+#Split dependent and independent variables(without feature selection)
+X_df_binary=application_binary_df.drop(["ALL-MAX-BUCKET"], axis=1)
+Y_df_binary=application_binary_df[["ALL-MAX-BUCKET"]]
+X_array_binary = X_df_binary.values
+Y_array_binary = Y_df_binary.values
+#Split data
+X_Normalized_Binary=Normalize(X_df_binary)
+from sklearn.model_selection import train_test_split
+X_train1, X_test1, Y_train1, Y_test1 = train_test_split( X_Normalized_Binary, Y_array_binary, test_size=0.3, random_state=4)
+print ('Train set:', X_train1.shape,  Y_train1.shape)
+print ('Test set:', X_test1.shape,  Y_test1.shape)
+#Hypertuning parameter search
+
+GridLogistic(X_train1,Y_train1)
+GridSVM(X_train1,Y_train1)
+GridKNN(X_train1,Y_train1)
+GridDecisionTree(X_train1,Y_train1)
+GridRandomForest(X_train1,Y_train1)
+#Apply Algorithm
+Binary_Logistic1        =LogisticReg(100,"l2","balanced","lbfgs","auto",X_train1, X_test1, Y_train1)
+Binary_SVM1             =SVM(0.1,"linear","auto",1,X_train1, X_test1, Y_train1)
+Binary_KNN1             =KNN(5,"distance",1,"brute",X_train1, X_test1, Y_train1)
+Binary_DecisionTree1    =DecisionTree(5,"gini","balanced",X_train1, X_test1, Y_train1)
+Binary_RandomForest1    =RandomForest(500,"log2",5,"entropy","balanced",X_train1, X_test1, Y_train1)
+#Performance Metrics
+listofalgorithm=(Binary_Logistic1,Binary_SVM1,Binary_KNN1,Binary_DecisionTree1,Binary_RandomForest1)
+AlgorithmNames=("Logistic","SVM","KNN","DecisionTree","RandomForest")
+for i in range(0,5):
+    algorithm=listofalgorithm[i]
+    name=AlgorithmNames[i]
+    #Probability of positive outcome
+    positiveprob= algorithm[:,1]
+    #ROC Curve
+    fpr, tpr, tresholds =roc_curve(Y_test1, positiveprob)
+    #Calculate Gmeans
+    def sqrt(x):
+        return x**(1/2)
+    gmeans = sqrt(tpr * (1 - fpr))
+    #Locate the index of the largest g-mean
+    largest = np.argmax(gmeans)
+    print('Best Threshold=%f, G-Mean=%.3f' % (tresholds[largest], gmeans[largest]),"for",name)
+    Probability_of_Positive = algorithm[:, 1]
+    New = []
+    #Create new dataset with the selected customers
+    for k in range(0, len(Probability_of_Positive)):
+        if Probability_of_Positive[k]>tresholds[largest]:
+            New.append(1)
+        else:
+            New.append(0)
+    #Calculate profit/loss and gmeans
+    display_summary(Y_test1,New)   
+    # Plot the roc curve for the model
+    plt.plot([0,1], [0,1], linestyle='--', label='No Skill')
+    plt.plot(fpr, tpr, marker='.', label=name)
+    plt.scatter(fpr[largest], tpr[largest], marker='o', color='black', label='Best')
+    # axis labels
+    plt.xlabel('False Positive Rate')
+    plt.ylabel('True Positive Rate')
+    plt.legend()
+    # show the plot
+    plt.show()
+
+Undersampling-Binary Model
+# import library
+#!pip install imblearn 
+X_df_binary=application_binary_df.drop(["ALL-MAX-BUCKET"], axis=1)
+Y_df_binary=application_binary_df[["ALL-MAX-BUCKET"]]
+from imblearn.under_sampling import RandomUnderSampler
+from collections import Counter
+rus = RandomUnderSampler(replacement=False,sampling_strategy=0.50,random_state=5)# fit predictor and target variable
+#Minority is 50% of the majority
+x_rus_bin, y_rus_bin = rus.fit_resample(X_df_binary, Y_df_binary)
+#Distribution Plot
+x_rus1=x_rus_bin.copy()
+x_rus1["ALL-MAX-BUCKET"]=y_rus_bin["ALL-MAX-BUCKET"]
+import seaborn as sns
+import matplotlib.pyplot as plt
+g_bin = sns.countplot(x_rus1['ALL-MAX-BUCKET'])
+g_bin.set_xticklabels(['Loss','Profit'])
+plt.show()
+
+#Creating array
+X_array_rus_binary = x_rus_bin.values
+Y_array_rus_binary = y_rus_bin.values
+#Split data
+X_Normalized_Binary_rus=Normalize(x_rus_bin)
+from sklearn.model_selection import train_test_split
+X_train1_rus, X_test1_rus, Y_train1_rus, Y_test1_rus = train_test_split( X_Normalized_Binary_rus, Y_array_rus_binary, test_size=0.3, random_state=4)
+print ('Train set:', X_train1_rus.shape,  Y_train1_rus.shape)
+print ('Test set:', X_test1_rus.shape,  Y_test1_rus.shape)
+
+#Hypertuning Parameter search
+
+GridLogistic(X_train1_rus,Y_train1_rus)
+GridSVM(X_train1_rus,Y_train1_rus)
+GridKNN(X_train1_rus,Y_train1_rus)
+GridDecisionTree(X_train1_rus,Y_train1_rus)
+GridRandomForest(X_train1_rus,Y_train1_rus)
+
+#Apply Algorithm
+Binary_rus_Logistic    =LogisticReg(100,"l2","balanced","sag","multinomial",X_train1_rus, X_test1, Y_train1_rus)
+Binary_rus_SVM         =SVM(100,"rbf","auto",1,X_train1_rus, X_test1, Y_train1_rus)
+Binary_rus_KNN         =KNN(7,"uniform",2,"auto",X_train1_rus, X_test1, Y_train1_rus)
+Binary_rus_DecisionTree=DecisionTree(7,"entropy","balanced",X_train1_rus, X_test1, Y_train1_rus)
+Binary_rus_RandomForest=RandomForest(200,"auto",5,"entropy","balanced_subsample",X_train1_rus, X_test1, Y_train1_rus)
+#Performance Metrics
+listofalgorithm=(Binary_rus_Logistic,Binary_rus_SVM,Binary_rus_KNN,Binary_rus_DecisionTree,Binary_rus_RandomForest)
+AlgorithmNames=("Logistic","SVM","KNN","DecisionTree","RandomForest")
+Treshold=(0.4,0.45,0.5,0.55,0.6,0.65)
+for treshold in Treshold:
+    print("RESULTS FOR TRESHOLD ",treshold)
+    for i in range(0,5):
+        print(AlgorithmNames[i])
+        Algorithm = listofalgorithm[i]
+        Probability_of_Positive = Algorithm[:, 1]
+        #Create new dataset with the selected customers
+        New = []
+        for k in range(0, len(Probability_of_Positive)):
+            if Probability_of_Positive[k]>treshold:
+                New.append(1)
+            else:
+                New.append(0)
+        #Calculate profit/loss and gmeans
+        display_summary(Y_test1,New)   
+SMOTE-BINARY MODELS
+# import library
+from imblearn.over_sampling import SMOTE
+
+#Apply SMOTE
+smote = SMOTE(sampling_strategy=1,random_state=10)
+
+# fit predictor and target variable
+x_smote_binary, y_smote_binary = smote.fit_resample(X_df_binary, Y_df_binary)
+print('Resample dataset shape', y_smote_binary.shape)
+#Distribution Plot
+x_smote1=x_smote_binary.copy()
+x_smote1["ALL-MAX-BUCKET"]=y_smote_binary["ALL-MAX-BUCKET"]
+import seaborn as sns
+import matplotlib.pyplot as plt
+g_bin = sns.countplot(x_smote1['ALL-MAX-BUCKET'])
+g_bin.set_xticklabels(['Loss','Profit'])
+plt.show()
+#Creating arrays
+X_array_smote_binary = x_smote_binary.values
+Y_array_smote_binary = y_smote_binary.values
+#Split data
+X_Normalized_smote_Binary=Normalize(x_smote_binary)
+from sklearn.model_selection import train_test_split
+X_train1_smote, X_test1_smote, Y_train1_smote, Y_test1_smote = train_test_split( X_Normalized_smote_Binary, Y_array_smote_binary, test_size=0.3, random_state=4)
+print ('Train set:', X_train1_smote.shape,  Y_train1_smote.shape)
+print ('Test set:', X_test1_smote.shape,  Y_test1_smote.shape)
+#Hypertuning parameters
+
+GridLogistic(X_train1_smote,Y_train1_smote)
+GridSVM(X_train1_smote,Y_train1_smote)
+GridKNN(X_train1_smote,Y_train1_smote)
+GridDecisionTree(X_train1_smote,Y_train1_smote)
+GridRandomForest(X_train1_smote,Y_train1_smote)
+#Apply Algorithm
+Binary_smote_Logistic      =LogisticReg(1,"l1",{0: 1, 1: 1},"saga","multinomial",X_train1_smote, X_test1, Y_train1_smote)
+Binary_smote_SVM           =SVM(100,"rbf","auto",1,X_train1_smote, X_test1, Y_train1_smote)
+Binary_smote_KNN           =KNN(13,"distance",2,"ball_tree",X_train1_smote, X_test1, Y_train1_smote)
+Binary_smote_DecisionTree  =DecisionTree(15,"gini","balanced",X_train1_smote,X_test1, Y_train1_smote)
+Binary_smote_RandomForest  =RandomForest(200,"log2",15,"gini","balanced",X_train1_smote, X_test1, Y_train1_smote)
+#Performance Metrics
+listofalgorithm=(Binary_smote_Logistic,Binary_smote_SVM,Binary_smote_KNN,Binary_smote_DecisionTree,Binary_smote_RandomForest)
+AlgorithmNames=("Logistic","SVM","KNN","DecisionTree","RandomForest")
+Treshold=(0.4,0.45,0.5,0.55,0.6,0.65)
+for treshold in Treshold:
+    print("RESULTS FOR TRESHOLD ",treshold)
+    for i in range(0,5):
+        print(AlgorithmNames[i])
+        Algorithm = listofalgorithm[i]
+        Probability_of_Positive = Algorithm[:, 1]
+        #Create new dataset with the selected customers
+        New = []
+        for k in range(0, len(Probability_of_Positive)):
+            if Probability_of_Positive[k]>treshold:
+                New.append(1)
+            else:
+                New.append(0)
+        #Calculate profit/loss and gmeans
+        display_summarySMOTE(Y_test1,New)   
+BUCKET PREDICTION
+#Distribution Plot 
+import seaborn as sns
+import matplotlib.pyplot as plt
+g_bin1 = sns.countplot(application_bucket_df['ALL-MAX-BUCKET'])
+plt.show()
+#Split dependent and independent variables
+X_df_bucket=application_bucket_df.drop(["ALL-MAX-BUCKET"], axis=1)
+Y_df_bucket=application_bucket_df[["ALL-MAX-BUCKET"]]
+X_array_bucket = X_df_bucket.values
+Y_array_bucket = Y_df_bucket.values
+#Split data
+X_Normalized_Bucket=Normalize(X_df_bucket)
+from sklearn.model_selection import train_test_split
+X_train2, X_test2, Y_train2, Y_test2 = train_test_split( X_Normalized_Bucket, Y_array_bucket, test_size=0.3, random_state=4)
+print ('Train set:', X_train2.shape,  Y_train2.shape)
+print ('Test set:', X_test2.shape,  Y_test2.shape)
+#Hypertuning Parameter Search
+
+GridLinear(X_train2,Y_train2)
+GridSVMR(X_train2,Y_train2)
+GridKNNR(X_train2,Y_train2)
+GridDecisionTreeR(X_train2,Y_train2)
+GridRandomForestR(X_train2,Y_train2)
+#Apply Algorithm
+Bucket_Linear          =LinearRegression("False",X_train2,Y_train2,X_test2)
+Bucket_SVM             =SVMR("sigmoid",10,"auto",1,X_train2, X_test2, Y_train2)
+Bucket_KNN             =KNNR(5,"uniform",1,"kd_tree",X_train2, X_test2, Y_train2)
+Bucket_DecisionTree    =DecisionTreeR(5,"mae","log2",X_train2, X_test2, Y_train2)
+Bucket_RandomForest    =RandomForestR(200,15,"auto",X_train2, X_test2, Y_train2)
+#Performance Metrics
+listofalgorithm=(Bucket_Linear,Bucket_SVM,Bucket_KNN,Bucket_DecisionTree,Bucket_RandomForest )
+AlgorithmNames=("Linear","SVM","KNN","DecisionTree","RandomForest")
+#Define tresholds
+Treshold=(-1,-0.7,-0.5,-0.45,-0.4)
+for treshold in Treshold:
+    print("RESULTS FOR TRESHOLD ",treshold)
+    print("Profit/Loss Results")
+    #Profit/Loss Calculation
+    for i in range(0,5):# For each algorithm
+        print(AlgorithmNames[i])
+        Prediction_Y_Hat = listofalgorithm[i]
+        New = []
+        for k in range(0, len(Prediction_Y_Hat)):#Check if prediction>treshold: if YES, put the actual,else NONE
+            if Prediction_Y_Hat[k]>treshold:
+                Y_test_list=Y_test2[k].tolist()
+                New.append(Y_test_list[0])
+        #Count number of each bucket
+        unique, counts = np.unique(New, return_counts=True)
+        #Calculate profit/loss
+        Profit_Loss_Bucket=(counts/len(Prediction_Y_Hat))*unique
+        print( Profit_Loss_Bucket.sum())
+
+    print("Sensitivity-Specifity Calculation")
+    #Sensitivity/Specifity Calculation
+    for i in range(0,5):# For each algorithm
+        import math
+        print(AlgorithmNames[i])
+        Prediction_Y_Hat = listofalgorithm[i]
+        Comparison = []
+        for k in range(0, len(Prediction_Y_Hat)):#Check if prediction>treshold: if YES, put the actual,else NONE
+            if Prediction_Y_Hat[k]>treshold:
+                if Y_test2[k]>-2:
+                    Comparison.append("TP")
+                else: 
+                    Comparison.append("FP")
+            else:
+                if Y_test2[k]>-2:
+                    Comparison.append("FN")
+                else:
+                    Comparison.append("TN")
+        #Count number of each type
+        TP=Comparison.count("TP")
+        FP=Comparison.count("FP")
+        FN=Comparison.count("FN")
+        TN=Comparison.count("TN")
+        #Calculate GMeans
+        Sens=TP/(TP+FN)
+        Spec=TN/(TN+FP)
+        SQRT=math.sqrt(Sens*Spec)
+        print(SQRT)
+Undersampling-Bucket Model
+#Applying undersampling
+# import library
+#!pip install imblearn 
+X_df_bucket=application_bucket_df.drop(["ALL-MAX-BUCKET"], axis=1)
+Y_df_bucket=application_bucket_df[["ALL-MAX-BUCKET"]]
+from imblearn.under_sampling import RandomUnderSampler
+from collections import Counter
+rus = RandomUnderSampler(random_state=19, replacement=False,sampling_strategy={0:4200, -2:1155,-3:807,-4:267,-5:120,-6:57,-7:306})# fit predictor and target variable
+x_rus_buc, y_rus_buc = rus.fit_resample(X_df_bucket, Y_df_bucket)
+
+#Distribution Plot
+x_rus2=x_rus_buc.copy()
+x_rus2["ALL-MAX-BUCKET"]=y_rus_buc["ALL-MAX-BUCKET"]
+import seaborn as sns
+import matplotlib.pyplot as plt
+g_bin = sns.countplot(x_rus2['ALL-MAX-BUCKET'])
+plt.show()
+#Creating arrays
+X_array_rus_bucket = x_rus_buc.values
+Y_array_rus_bucket = y_rus_buc.values
+#Split data
+X_Normalized_Bucket_rus=Normalize(x_rus_buc)
+from sklearn.model_selection import train_test_split
+X_train2_rus, X_test2_rus, Y_train2_rus, Y_test2_rus = train_test_split( X_Normalized_Bucket_rus, Y_array_rus_bucket, test_size=0.3, random_state=4)
+print ('Train set:', X_train2_rus.shape,  Y_train2_rus.shape)
+print ('Test set:', X_test2_rus.shape,  Y_test2_rus.shape)
+#Hypertuning Parameters serach
+
+GridLinear(X_train2_rus,Y_train2_rus)
+GridSVMR(X_train2_rus,Y_train2_rus)
+GridKNNR(X_train2_rus,Y_train2_rus)
+GridDecisionTreeR(X_train2_rus,Y_train2_rus)
+GridRandomForestR(X_train2_rus,Y_train2_rus)
+#Apply Models
+import numpy as np
+Bucket_Linear_rus          = LinearRegression("True",X_train2_rus,Y_train2_rus,X_test2)
+Bucket_SVM_rus             =SVMR("poly",0.1,"scale",3,X_train2_rus, X_test2, Y_train2_rus)
+Bucket_KNN_rus             =KNNR(15,"uniform",1,"auto",X_train2_rus, X_test2, Y_train2_rus)
+Bucket_DecisionTree_rus    =DecisionTreeR(3,"mae","auto",X_train2_rus, X_test2, Y_train2_rus)
+Bucket_RandomForest_rus    =RandomForestR(300,15,"auto",X_train2_rus, X_test2, Y_train2_rus)
+#Performance Metrics
+listofalgorithm=(Bucket_Linear_rus,Bucket_SVM_rus,Bucket_KNN_rus,Bucket_DecisionTree_rus,Bucket_RandomForest_rus )
+AlgorithmNames=("Logistic","SVM","KNN","DecisionTree","RandomForest")
+#Define tresholds
+Treshold=(-1,-0.7,-0.5,-0.45,-0.4)
+for treshold in Treshold:
+    print("RESULTS FOR TRESHOLD ",treshold)
+    print("Profit/Loss Results")
+    #Profit/Loss Calculation
+    for i in range(0,5):# For each algorithm
+        print(AlgorithmNames[i])
+        Prediction_Y_Hat = listofalgorithm[i]
+        New = []
+        for k in range(0, len(Prediction_Y_Hat)):#Check if prediction>treshold: if YES, put the actual,else NONE
+            if Prediction_Y_Hat[k]>treshold:
+                Y_test_list=Y_test2[k].tolist()
+                New.append(Y_test_list[0])
+        #Count number of each bucket
+        unique, counts = np.unique(New, return_counts=True)
+        #Calculate profit/loss
+        Profit_Loss_Bucket=(counts/len(Prediction_Y_Hat))*unique
+        print( Profit_Loss_Bucket.sum())
+
+    print("Sensitivity-Specifity Calculation")
+    #Sensitivity/Specifity Calculation
+    for i in range(0,5):# For each algorithm
+        import math
+        print(AlgorithmNames[i])
+        Prediction_Y_Hat = listofalgorithm[i]
+        Comparison = []
+        for k in range(0, len(Prediction_Y_Hat)):#Check if prediction>treshold: if YES, put the actual,else NONE
+            if Prediction_Y_Hat[k]>treshold:
+                if Y_test2[k]>-2:
+                    Comparison.append("TP")
+                else: 
+                    Comparison.append("FP")
+            else:
+                if Y_test2[k]>-2:
+                    Comparison.append("FN")
+                else:
+                    Comparison.append("TN")
+        #Count number of each type
+        TP=Comparison.count("TP")
+        FP=Comparison.count("FP")
+        FN=Comparison.count("FN")
+        TN=Comparison.count("TN")
+        #Calculate GMeans
+        Sens=TP/(TP+FN)
+        Spec=TN/(TN+FP)
+        SQRT=math.sqrt(Sens*Spec)
+        print(SQRT)
+        
+SMOTE-Bucket Model
+#Applying SMOTE
+# import library
+from imblearn.over_sampling import SMOTE
+
+smote = SMOTE(random_state=10)
+
+# fit predictor and target variable
+x_smote_bucket, y_smote_bucket = smote.fit_resample(X_df_bucket, Y_df_bucket)
+print('Resample dataset shape', y_smote_bucket.shape)
+#Distribution Plot
+x_smote2=x_smote_bucket.copy()
+x_smote2["ALL-MAX-BUCKET"]=y_smote_bucket["ALL-MAX-BUCKET"]
+import seaborn as sns
+import matplotlib.pyplot as plt
+g_bin = sns.countplot(x_smote2['ALL-MAX-BUCKET'])
+plt.show()
+#Creating array
+X_array_smote_bucket = x_smote_bucket.values
+Y_array_smote_bucket = y_smote_bucket.values
+#Split data
+X_Normalized_Bucket_smote=Normalize(x_smote_bucket)
+from sklearn.model_selection import train_test_split
+X_train2_smote, X_test2_smote, Y_train2_smote, Y_test2_smote = train_test_split( X_Normalized_Bucket_smote, Y_array_smote_bucket, test_size=0.3, random_state=4)
+print ('Train set:', X_train2_smote.shape,  Y_train2_smote.shape)
+print ('Test set:', X_test2_smote.shape,  Y_test2_smote.shape)
+#Hypertuning Parameters
+
+GridLinear(X_train2_smote,Y_train2_smote)
+GridSVMR(X_train2_smote,Y_train2_smote)
+GridKNNR(X_train2_smote,Y_train2_smote)
+GridDecisionTreeR(X_train2_smote,Y_train2_smote)
+GridRandomForestR(X_train2_smote,Y_train2_smote)
+#Apply Models
+Bucket_Linear_smote      =LinearRegression("False",X_train2_smote,Y_train2_smote,X_test2)
+Bucket_SVM_smote         =SVMR("poly",100,"auto",3,X_train2_smote,X_test2,Y_train2_smote)
+Bucket_KNN_smote         =KNNR(19,"distance",1,"auto",X_train2_smote,X_test2,Y_train2_smote)
+Bucket_DecisionTree_smote=DecisionTreeR(15,"mae","auto",X_train2_smote,X_test2,Y_train2_smote)
+Bucket_RandomForest_smote=RandomForestR(100,15,"auto",X_train2_smote,X_test2,Y_train2_smote)#Performance Metrics
+listofalgorithm=(Bucket_Linear_smote,Bucket_SVM_smote,Bucket_KNN_smote,Bucket_DecisionTree_smote,Bucket_RandomForest_smote )
+AlgorithmNames=("Linear","SVM","KNN","DecisionTree","RandomForest")
+#Define Tresholds
+Treshold=(-1,-0.7,-0.5,-0.45,-0.4)
+for treshold in Treshold:
+    print("RESULTS FOR TRESHOLD ",treshold)
+    print("Profit/Loss Results")
+    #Profit/Loss Calculation
+    for i in range(0,5):# For each algorithm
+        print(AlgorithmNames[i])
+        Prediction_Y_Hat = listofalgorithm[i]
+        New = []
+        for k in range(0, len(Prediction_Y_Hat)):#Check if prediction>treshold: if YES, put the actual,else NONE
+            if Prediction_Y_Hat[k]>treshold:
+                Y_test_list=Y_test2[k].tolist()
+                New.append(Y_test_list[0])
+        #Count number of each bucket
+        unique, counts = np.unique(New, return_counts=True)
+        #Calculate profit/loss
+        Profit_Loss_Bucket=(counts/len(Prediction_Y_Hat))*unique
+        print( Profit_Loss_Bucket.sum())
+
+    print("F1 Score Calculation")
+    # F1 Score Calculation
+    for i in range(0,5):# For each algorithm
+        import math
+        print(AlgorithmNames[i])
+        Prediction_Y_Hat = listofalgorithm[i]
+        Comparison = []
+        for k in range(0, len(Prediction_Y_Hat)):#Check if prediction>treshold: if YES, put the actual,else NONE
+            if Prediction_Y_Hat[k]>treshold:
+                if Y_test2[k]>-2:
+                    Comparison.append("TP")
+                else: 
+                    Comparison.append("FP")
+            else:
+                if Y_test2[k]>-2:
+                    Comparison.append("FN")
+                else:
+                    Comparison.append("TN")
+        #Count number of each type
+        TP=Comparison.count("TP")
+        FP=Comparison.count("FP")
+        FN=Comparison.count("FN")
+        TN=Comparison.count("TN")
+        #Calculate GMeans
+        if TP+FP == 0:
+            Precision=0
+        else:
+            Precision=TP/(TP+FP)
+        if TP+FN==0:
+            Recall=0
+        else:
+            Recall=TP/(TP+FN)
+        if Precision+Recall==0:
+            F1=0
+        else:
+            F1=2*((Precision*Recall)/(Precision+Recall))
+        print(F1)
+PROFIT-LOSS MODEL
+#Dataset with profit and loss
+application_profit_df["ALL-MAX-BUCKET"].replace(to_replace=[0,-1,-2,-3,-4,-5,-6,-7], value=[0.04,0.01,0,-0.15,-0.25,-0.35,-0.45,-0.65],inplace=True)
+#Distribution Plot
+import seaborn as sns
+import matplotlib.pyplot as plt
+g_bin1 = sns.countplot(application_profit_df['ALL-MAX-BUCKET'])
+plt.show()
+#Split dependent and independent variables
+X_df_profit=application_profit_df.drop(["ALL-MAX-BUCKET"], axis=1)
+Y_df_profit=application_profit_df[["ALL-MAX-BUCKET"]]
+X_array_profit = X_df_profit.values
+Y_array_profit = Y_df_profit.values
+#Split data
+X_Normalized_Profit=Normalize(X_df_profit)
+from sklearn.model_selection import train_test_split
+X_train3, X_test3, Y_train3, Y_test3 = train_test_split( X_Normalized_Profit, Y_array_profit, test_size=0.3, random_state=4)
+print ('Train set:', X_train3.shape,  Y_train3.shape)
+print ('Test set:', X_test3.shape,  Y_test3.shape)
+#Hypertuning parameters search
+
+GridLinear(X_train3,Y_train3)
+GridSVMR(X_train3,Y_train3)
+GridKNNR(X_train3,Y_train3)
+GridDecisionTreeR(X_train3,Y_train3)
+GridRandomForestR(X_train3,Y_train3)
+#Apply Algorithm
+Profit_Linear=LinearRegression("True",X_train3,Y_train3,X_test3)
+Profit_SVM=SVMR("sigmoid",100,"auto",1,X_train3,X_test3,Y_train3)
+Profit_KNN=KNNR(15,"uniform",1,"kd_tree",X_train3,X_test3,Y_train3)
+Profit_DecisionTree=DecisionTreeR(3,"mae","sqrt",X_train3,X_test3,Y_train3)
+Profit_RandomForest=RandomForestR(300,9,"auto",X_train3,X_test3,Y_train3)
+#Performance Metrics
+listofalgorithm=(Profit_Linear,Profit_SVM,Profit_KNN,Profit_DecisionTree,Profit_RandomForest )
+AlgorithmNames=("Linear","SVM","KNN","DecisionTree","RandomForest")
+#Define Tresholds
+Treshold=(0,0.005,0.01,0.02,0.025)
+for treshold in Treshold:
+    print("RESULTS FOR TRESHOLD ",treshold)
+    print("Profit/Loss Results")
+    #Profit/Loss Calculation
+    for i in range(0,5):# For each algorithm
+        print(AlgorithmNames[i])
+        Prediction_Y_Hat = listofalgorithm[i]
+        New = []
+        for k in range(0, len(Prediction_Y_Hat)):#Check if prediction>treshold: if YES, put the actual,else NONE
+            if Prediction_Y_Hat[k]>treshold:
+                Y_test_list=Y_test3[k].tolist()
+                New.append(Y_test_list[0])
+        #Count number of each bucket
+        unique, counts = np.unique(New, return_counts=True)
+        #Calculate profit/loss
+        Profit_Loss_Bucket=(counts/len(Prediction_Y_Hat))*unique
+        print( Profit_Loss_Bucket.sum())
+        
+    print("Sensitivity-Specifity Calculation")
+    #Sensitivity/Specifity Calculation
+    for i in range(0,5):# For each algorithm
+        import math
+        print(AlgorithmNames[i])
+        Prediction_Y_Hat = listofalgorithm[i]
+        Comparison = []
+        for k in range(0, len(Prediction_Y_Hat)):#Check if prediction>treshold: if YES, put the actual,else NONE
+            if Prediction_Y_Hat[k]>treshold:
+                if Y_test3[k]>0:
+                    Comparison.append("TP")
+                else: 
+                    Comparison.append("FP")
+            else:
+                if Y_test3[k]>0:
+                    Comparison.append("FN")
+                else:
+                    Comparison.append("TN")
+        #Count number of each type
+        TP=Comparison.count("TP")
+        FP=Comparison.count("FP")
+        FN=Comparison.count("FN")
+        TN=Comparison.count("TN")
+        #Calculate GMeans
+        Sens=TP/(TP+FN)
+        Spec=TN/(TN+FP)
+        SQRT=math.sqrt(Sens*Spec)
+        print(SQRT)
+
+ax = behave_classification['ALL-MAX-BUCKET'].value_counts().plot(kind ='bar', figsize = (10,6),fontsize =13,color = "orange")
+ax.set_title('Distribution of clients (1 = Good, 0 = Bad)', size = 20, pad = 30)
+ax.set_ylabel('Count')
+
+for i in ax.patches:
+    ax.text(i.get_x()+ 0.2,i.get_height()+100,str(round(i.get_height(),2)),fontsize = 15)
+
+plt.savefig('1_0 dist.png')
+#making input and target variable...
+X_classification = behave_classification.drop('ALL-MAX-BUCKET',axis =1)
+Y_classification = behave_classification['ALL-MAX-BUCKET']
+#splitting the data into train and test
+X_train_c, X_test_c, Y_train_c, Y_test_c = train_test_split(
+   X_classification,Y_classification,test_size = 0.25, random_state = 42
+)
+#imbalanced
+#Hypertuning parameter search
+
+param_l = GridLogistic(X_train_c,Y_train_c)
+param_d = GridDecisionTree(X_train_c,Y_train_c)
+param_r = GridRandomForest(X_train_c,Y_train_c)
+param_n = GridNN(X_train_c,Y_train_c)
+classification_Logistic = LogisticReg(0.1,'l2','balanced', 'newton-cg','auto',X_train_c,X_test_c,Y_train_c)
+classification_Dtree    = DecisionTree( 3, 'entropy','balanced', X_train_c,X_test_c,Y_train_c)
+classification_Rforest  = RandomForest(100,'auto',6,'entropy','balanced',X_train_c,X_test_c,Y_train_c)
+classification_NN       = NN(0.001, 6, 500, 0, 'lbfgs',X_train_c,X_test_c,Y_train_c)
+#Performance Metrics
+listofalgorithm=(classification_Logistic,classification_Dtree,classification_Rforest,classification_NN)
+AlgorithmNames=("Logistic Regression","Decision Tree","Random Forest","Neural Network")
+for i in range(0,4):
+    algorithm=listofalgorithm[i]
+    name=AlgorithmNames[i]
+    #Probability of positive outcome
+    positiveprob= algorithm[:,1]
+    #ROC Curve
+    fpr, tpr, tresholds =roc_curve(Y_test_c, positiveprob)
+    #Calculate Gmeans
+    def sqrt(x):
+        return x**(1/2)
+    gmeans = sqrt(tpr * (1 - fpr))
+    #Locate the index of the largest g-mean
+    largest = np.argmax(gmeans)
+    print('Best Threshold=%f, G-Mean=%.3f' % (tresholds[largest], gmeans[largest]),"for",name)
+    Probability_of_Positive = algorithm[:, 1]
+    New = []
+    #Create new dataset with the selected customers
+    for k in range(0, len(Probability_of_Positive)):
+        if Probability_of_Positive[k]>tresholds[largest]:
+            New.append(1)
+        else:
+            New.append(0)
+    #Calculate profit/loss and gmeans
+    display_summary(Y_test_c,New)   
+    # Plot the roc curve for the model
+    plt.figure(figsize = (10,8))
+    plt.plot([0,1], [0,1], linestyle='--', label='No Skill')
+    plt.plot(fpr, tpr, marker='.', label='Model')
+    plt.scatter(fpr[largest], tpr[largest], marker='o', color='black', label='Best')
+    # axis labels
+    plt.xlabel('False Positive Rate')
+    plt.ylabel('True Positive Rate')
+    plt.legend()
+    # show the plot
+    plt.show()
+#Using oversampling
+#SMOTE
+sm = SMOTE(random_state = 42)
+X_sm,y_sm = sm.fit_resample(X_classification,Y_classification)
+
+print(f'''Shape of X before SMOTE : {X_classification.shape}
+Shape od X after SMOTE : {X_sm.shape}''')
+print('\nBalance of positive and negative Classes (%):')
+y_sm.value_counts(normalize = True)*100
+ax = y_sm.value_counts().plot(kind ='bar', figsize = (10,6),fontsize =13,color = "#00EE76")
+ax.set_title('Distribution of clients using SMOTE (1 = Good, 0 = Bad)', size = 20, pad = 30)
+ax.set_ylabel('Count')
+
+for i in ax.patches:
+    ax.text(i.get_x()+ 0.2,i.get_height()+100,str(round(i.get_height(),2)),fontsize = 15)
+
+plt.savefig('1-0 dist Smote.png')
+X_train_c_s, X_test_c_s, Y_train_c_s, Y_test_c_s = train_test_split(
+   X_sm,y_sm, test_size = 0.25, random_state = 42
+)
+#Hypertuning parameter search
+
+param_l_s = GridLogistic(X_train_c,Y_train_c)
+param_d_s = GridDecisionTree(X_train_c,Y_train_c)
+param_r_s = GridRandomForest(X_train_c,Y_train_c)
+param_n_s = GridNN(X_train_c,Y_train_c)
+#0.1,'l1','balanced', 'saga','auto'
+#15, 'gini','balanced'
+#100, 'auto',   15, 'gini','balanced'
+#{'alpha': 0.1, 'hidden_layer_sizes': 9, 'max_iter': 1000, 'random_state': 0, 'solver': 'lbfgs'}
+classification_Logistic_s = LogisticReg(0.1,'l1','balanced', 'saga','auto',X_train_c_s,X_test_c,Y_train_c_s)
+classification_Dtree_s    = DecisionTree( 15, 'gini','balanced', X_train_c_s,X_test_c,Y_train_c_s)
+classification_Rforest_s  = RandomForest(100, 'auto',   15, 'gini','balanced',X_train_c_s,X_test_c,Y_train_c_s)
+classification_NN_s       = NN(0.1, 9, 1000, 0, 'lbfgs',X_train_c_s,X_test_c,Y_train_c_s)
+#Performance Metrics
+listofalgorithm=(classification_Logistic_s,classification_Dtree_s,classification_Rforest_s,classification_NN_s)
+AlgorithmNames=("Logistic Regression","Decision Tree","Random Forest","Neural Network")
+Treshold=(0.4,0.45,0.5,0.55,0.6,0.65)
+for treshold in Treshold:
+    print("RESULTS FOR TRESHOLD ",treshold)
+    for i in range(0,4):
+        print(AlgorithmNames[i])
+        Algorithm = listofalgorithm[i]
+        Probability_of_Positive = Algorithm[:, 1]
+        #Create new dataset with the selected customers
+        New = []
+        for k in range(0, len(Probability_of_Positive)):
+            if Probability_of_Positive[k]>treshold:
+                New.append(1)
+            else:
+                New.append(0)
+        #Calculate profit/loss and gmeans
+        display_summarySMOTE(Y_test_c,New)  
+#------------------------------------------------------------------------------------------------------------------
+#Bucket Prediction
+#Distribution Plot 
+plt.figure(figsize = (12,8))
+buckets = sns.countplot(behave_bucket['ALL-MAX-BUCKET'],palette="Set3")
+plt.savefig('bucket_imb.png')
+#Split dependent and independent variables
+X_df_bucket = behave_bucket.drop(["ALL-MAX-BUCKET"], axis=1)
+Y_df_bucket = behave_bucket[["ALL-MAX-BUCKET"]]
+X_array_bucket = X_df_bucket.values
+Y_array_bucket = Y_df_bucket.values
+#Split data
+
+X_train_b, X_test_b, Y_train_b, Y_test_b = train_test_split( X_df_bucket, Y_array_bucket, test_size=0.3, random_state=4)
+print ('Train set:', X_train_b.shape,  Y_train_b.shape)
+print ('Test set:', X_test_b.shape,  Y_test_b.shape)
+#Hypertuning Parameter Search
+paramL = GridLinear(X_train_b,Y_train_b)
+paramD = GridDecisionTreeR(X_train_b,Y_train_b)
+paramR = GridRandomForestR(X_train_b,Y_train_b)
+paramN = GridNNR(X_train_b,Y_train_b)
+#print(paramL,"\n",paramD,"\n",paramR,"\n",paramN)
+#{'fit_intercept': True}
+#{'criterion': 'mae', 'max_depth': 3, 'max_features': 'auto'}
+#{'max_depth': 7, 'max_features': 'auto', 'n_estimators': 300}
+#'activation': 'tanh', 'alpha': 5e-05, 'hidden_layer_sizes': (50,), 'solver': 'adam'
+#Apply Algorithm
+Bucket_Linear          =LinearRegression("True",X_train_b,X_test_b,Y_train_b)
+Bucket_DecisionTree    =DecisionTreeR(3, 'mae', 'auto', X_train_b,X_test_b,Y_train_b)
+Bucket_RandomForest    =RandomForestR(300, 7,'auto',X_train_b,X_test_b,Y_train_b)
+Bucket_NN              =NNR('tanh',(50,),'adam',5e-05,X_train_b,X_test_b,Y_train_b)
+#Performance Metrics
+listofalgorithm=(Bucket_Linear,Bucket_DecisionTree,Bucket_RandomForest,Bucket_NN )
+AlgorithmNames=("Linear Regression","Decision Tree","Random Forest","Neural Network")
+Treshold=(-1,-0.7,-0.5,-0.45,-0.4)
+for treshold in Treshold:
+    print("RESULTS FOR TRESHOLD ",treshold)
+    print("Profit/Loss Results")
+    #Profit/Loss Calculation
+    for i in range(0,4):# For each algorithm
+        print(AlgorithmNames[i])
+        Prediction_Y_Hat = listofalgorithm[i]
+        New = []
+        for k in range(0, len(Prediction_Y_Hat)):#Check if prediction>treshold: if YES, put the actual,else NONE
+            if Prediction_Y_Hat[k]>treshold:
+                Y_test_list = Y_test_b[k].tolist()
+                New.append(Y_test_list[0])
+        #Count number of each bucket
+        unique, counts = np.unique(New, return_counts=True)
+        #Calculate profit/loss
+        Profit_Loss_Bucket=(counts/len(Prediction_Y_Hat))*unique
+        print( Profit_Loss_Bucket.sum())
+
+    print("Sensitivity-Specifity Calculation")
+    #Sensitivity/Specifity Calculation
+    for i in range(0,4):# For each algorithm
+        import math
+        print(AlgorithmNames[i])
+        Prediction_Y_Hat = listofalgorithm[i]
+        Comparison = []
+        for k in range(0, len(Prediction_Y_Hat)):#Check if prediction>treshold: if YES, put the actual,else NONE
+            if Prediction_Y_Hat[k]>treshold:
+                if Y_test_b[k]>-2:
+                    Comparison.append("TP")
+                else: 
+                    Comparison.append("FP")
+            else:
+                if Y_test_b[k]>-2:
+                    Comparison.append("FN")
+                else:
+                    Comparison.append("TN")
+        #Count number of each type
+        TP=Comparison.count("TP")
+        FP=Comparison.count("FP")
+        FN=Comparison.count("FN")
+        TN=Comparison.count("TN")
+        Sens=TP/(TP+FN)
+        Spec=TN/(TN+FP)
+        SQRT=math.sqrt(Sens*Spec)
+        print(SQRT)
+#smote
+#Applying SMOTE
+# import library
+from imblearn.over_sampling import SMOTE
+
+smote = SMOTE(random_state=10)
+
+# fit predictor and target variable
+x_smote_bucket, y_smote_bucket = smote.fit_resample(X_df_bucket, Y_df_bucket)
+print('Resample dataset shape', y_smote_bucket.shape)
+
+#Distribution Plot
+x_smote_b = x_smote_bucket.copy()
+x_smote_b["ALL-MAX-BUCKET"]=y_smote_bucket["ALL-MAX-BUCKET"]
+plt.figure(figsize = (12,8))
+g_bin = sns.countplot(x_smote_b['ALL-MAX-BUCKET'],palette="Set2")
+plt.savefig('bucket_smote.png')
+#Creating array
+X_array_smote_bucket = x_smote_bucket.values
+Y_array_smote_bucket = y_smote_bucket.values
+#splitting the data into training and testing - smote
+X_train_b_smote, X_test_b_smote, Y_train_b_smote, Y_test_b_smote = train_test_split( x_smote_bucket, Y_array_smote_bucket, test_size=0.3, random_state=4)
+print ('Train set:', X_train_b_smote.shape,  Y_train_b_smote.shape)
+print ('Test set:', X_test_b_smote.shape,  Y_test_b_smote.shape)
+#Hypertuning Parameter Search
+
+paramLs = GridLinear(X_train_b_smote,Y_train_b_smote)
+paramDs = GridDecisionTreeR(X_train_b_smote,Y_train_b_smote)
+paramRs = GridRandomForestR(X_train_b_smote,Y_train_b_smote)
+paramNs  = GridNNR(X_train_b_smote,Y_train_b_smote)
+#print(paramLs,"\n",paramDs,"\n",paramRs,"\n",paramNs)
+#{'fit_intercept': True}
+#{'criterion': 'mae', 'max_depth': 15, 'max_features': 'auto'}
+
+#{'activation': 'tanh', 'alpha': 0.0005, 'hidden_layer_sizes': (50,100,50), 'solver': 'adam'}
+#Apply Models
+Bucket_Linear_smote       = LinearRegression("True",X_train_b_smote,X_test_b_smote,Y_train_b_smote)
+Bucket_DecisionTree_smote = DecisionTreeR(15,"mae","auto",X_train_b_smote,X_test_b_smote,Y_train_b_smote)
+Bucket_RandomForest_smote = RandomForestR(100,15,"auto",X_train_b_smote,X_test_b_smote,Y_train_b_smote)
+Bucket_NN_smote           = NNR('tanh',(50,100,50),'adam',0.0005,X_train_b_smote,X_test_b_smote,Y_train_b_smote)
+#Performance Metrics
+listofalgorithm=(Bucket_Linear_smote,Bucket_DecisionTree_smote,Bucket_RandomForest_smote,Bucket_NN_smote)
+AlgorithmNames=("Linear Regression","Decision Tree","Random Forest","Neural Network")
+Treshold=(-1,-0.7,-0.5,-0.45,-0.4)
+for treshold in Treshold:
+    print("RESULTS FOR TRESHOLD ",treshold)
+    print("Profit/Loss Results")
+    #Profit/Loss Calculation
+    for i in range(0,4):# For each algorithm
+        print(AlgorithmNames[i])
+        Prediction_Y_Hat = listofalgorithm[i]
+        New = []
+        for k in range(0, len(Prediction_Y_Hat)):#Check if prediction>treshold: if YES, put the actual,else NONE
+            if Prediction_Y_Hat[k]>treshold:
+                Y_test_list = Y_test_b_smote[k].tolist()
+                New.append(Y_test_list[0])
+        #Count number of each bucket
+        unique, counts = np.unique(New, return_counts=True)
+        #Calculate profit/loss
+        Profit_Loss_Bucket=(counts/len(Prediction_Y_Hat))*unique
+        print( Profit_Loss_Bucket.sum())
+
+    print("Precision-Recall-F1 Score Calculation")
+    #Sensitivity/Specifity Calculation
+    for i in range(0,4):# For each algorithm
+        import math
+        print(AlgorithmNames[i])
+        Prediction_Y_Hat = listofalgorithm[i]
+        Comparison = []
+        for k in range(0, len(Prediction_Y_Hat)):#Check if prediction>treshold: if YES, put the actual,else NONE
+            if Prediction_Y_Hat[k]>treshold:
+                if Y_test_b_smote[k]>-2:
+                    Comparison.append("TP")
+                else: 
+                    Comparison.append("FP")
+            else:
+                if Y_test_b_smote[k]>-2:
+                    Comparison.append("FN")
+                else:
+                    Comparison.append("TN")
+        #Count number of each type
+        TP=Comparison.count("TP")
+        FP=Comparison.count("FP")
+        FN=Comparison.count("FN")
+        TN=Comparison.count("TN")
+        Precision=TP/(TP+FP)
+        Recall=TP/(TP+FN)
+        F1_score= (2*Precision*Recall)/(Precision+Recall)
+        print("Precision is ",Precision,"\n","Recall is ",Recall,"\n","F1 Score is ",F1_score)
+#-------------------------------------------------------------------------------------------------------------------
+#Dataset with profit and loss
+behave_profitLoss["ALL-MAX-BUCKET"].replace(to_replace=[0,-1,-2,-3,-4,-5,-6,-7], value=[0.03,0.01,0,-0.15,-0.25,-0.35,-0.45,-0.65],inplace=True)
+#Distribution Plot
+plt.figure(figsize = (12,8))
+profit_loss = sns.countplot(behave_profitLoss['ALL-MAX-BUCKET'],palette="Set2")
+plt.savefig('pl_imb.png')
+unique, counts = np.unique(behave_profitLoss["ALL-MAX-BUCKET"], return_counts=True)
+print(unique,counts)
+#Split dependent and independent variables
+X_df_profit=behave_profitLoss.drop(["ALL-MAX-BUCKET"], axis=1)
+Y_df_profit=behave_profitLoss[["ALL-MAX-BUCKET"]]
+X_array_profit = X_df_profit.values
+Y_array_profit = Y_df_profit.values
+#Split data
+X_train_pl, X_test_pl, Y_train_pl, Y_test_pl = train_test_split( X_df_profit, Y_array_profit, test_size=0.3, random_state=4)
+print ('Train set:', X_train_pl.shape,  Y_train_pl.shape)
+print ('Test set:', X_test_pl.shape,  Y_test_pl.shape)
+#Hypertuning parameters search
+paramLp = GridLinear(X_train_pl,Y_train_pl)
+paramDp = GridDecisionTreeR(X_train_pl,Y_train_pl)
+paramRp = GridRandomForestR(X_train_pl,Y_train_pl)
+paramNp = GridNNR(X_train_pl,Y_train_pl)
+#print(paramLp,"\n",paramDp,"\n",paramRp,"\n",paramNp)
+#{'fit_intercept': True}
+#{'criterion': 'mae', 'max_depth': 3, 'max_features': 'auto'}
+#{'max_depth': 6, 'max_features': 'auto', 'n_estimators': 300}
+#{'activation': 'tanh', 'alpha': 5e-05, 'hidden_layer_sizes': (50, 50, 50), 'solver': 'lbfgs'}
+#Apply Algorithm
+Profit_Linear=LinearRegression("True",X_train_pl,X_test_pl,Y_train_pl)
+Profit_DecisionTree=DecisionTreeR(3,"mae","auto",X_train_pl,X_test_pl,Y_train_pl)
+Profit_RandomForest=RandomForestR(300,6,"auto",X_train_pl,X_test_pl,Y_train_pl)
+Profit_NN = NNR('tanh',(50,50,50),'lbfgs',5e-05,X_train_pl,X_test_pl,Y_train_pl)
+#Performance Metrics
+listofalgorithm=(Profit_Linear,Profit_DecisionTree,Profit_RandomForest,Profit_NN)
+AlgorithmNames=("Linear Regression","Decision Tree","Random Forest","Neural Network")
+
+Treshold=(0.005,0.01,0.02,0.025)
+for treshold in Treshold:
+    print("RESULTS FOR TRESHOLD ",treshold)
+    print("Profit/Loss Results")
+    #Profit/Loss Calculation
+    for i in range(0,4):# For each algorithm
+        print(AlgorithmNames[i])
+        Prediction_Y_Hat = listofalgorithm[i]
+        New = []
+        for k in range(0, len(Prediction_Y_Hat)):#Check if prediction>treshold: if YES, put the actual,else NONE
+            if Prediction_Y_Hat[k]>treshold:
+                Y_test_list=Y_test_pl[k].tolist()
+                New.append(Y_test_list[0])
+        #Count number of each bucket
+        unique, counts = np.unique(New, return_counts=True)
+        #Calculate profit/loss
+        Profit_Loss_Bucket=(counts/len(Prediction_Y_Hat))*unique
+        print( Profit_Loss_Bucket.sum())
+        
+    print("Sensitivity-Specifity Calculation")
+    #Sensitivity/Specifity Calculation
+    for i in range(0,4):# For each algorithm
+        import math
+        print(AlgorithmNames[i])
+        Prediction_Y_Hat = listofalgorithm[i]
+        Comparison = []
+        for k in range(0, len(Prediction_Y_Hat)):#Check if prediction>treshold: if YES, put the actual,else NONE
+            if Prediction_Y_Hat[k]>treshold:
+                if Y_test_pl[k] > 0:
+                    Comparison.append("TP")
+                else: 
+                    Comparison.append("FP")
+            else:
+                if Y_test_pl[k] > 0:
+                    Comparison.append("FN")
+                else:
+                    Comparison.append("TN")
+        #Count number of each type
+        TP=Comparison.count("TP")
+        FP=Comparison.count("FP")
+        FN=Comparison.count("FN")
+        TN=Comparison.count("TN")
+        if ((TP+FN)!=0 | (TN+FP)!=0):
+            Sens=TP/(TP+FN)
+            Spec=TN/(TN+FP)
+            SQRT=math.sqrt(Sens*Spec)
+            print("gmean is ",SQRT)
+        else:
+            Sens=0
+            Spec=0
+            print("gmean is 0")
